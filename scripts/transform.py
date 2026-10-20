@@ -1,156 +1,173 @@
-# transform.py
 
+from pathlib import Path
+import logging
 
 import numpy as np
 import pandas as pd
 
 
-# =========================
-# Read Data
-# =========================
-df = pd.read_csv("data/Superstore_Messy.csv")
+logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CLEANED_DATA_PATH = PROJECT_ROOT / "data" / "Superstore_Final_Cleaned.csv"
 
 
-# =========================
-# Standardize Column Names
-# =========================
-df.columns = [col.upper().replace(" ", "_").replace("-", "_") for col in df.columns]
+def transform_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Clean and standardize the extracted Superstore dataset."""
+
+    if df.empty:
+        raise ValueError("Cannot transform an empty dataset.")
+
+    df = df.copy()
+    initial_rows = len(df)
+
+    # Standardize column names.
+    df.columns = [
+        col.strip().upper().replace(" ", "_").replace("-", "_")
+        for col in df.columns
+    ]
+
+    # Remove exact duplicate records.
+    duplicates = int(df.duplicated().sum())
+    df = df.drop_duplicates().copy()
+
+    # Check required columns.
+    required_columns = [
+        "ORDER_ID",
+        "ORDER_DATE",
+        "SHIP_DATE",
+        "PRODUCT_ID",
+        "PRODUCT_NAME",
+        "SALES",
+        "QUANTITY",
+        "PROFIT",
+    ]
+
+    missing_columns = [
+        col for col in required_columns if col not in df.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            f"Required columns missing: {missing_columns}"
+        )
+
+    # Normalize text fields.
+    text_columns = df.select_dtypes(include=["object"]).columns
+
+    for col in text_columns:
+        df[col] = df[col].str.strip()
+
+    # Standardize missing categorical values.
+    for col in ["CUSTOMER_NAME", "CITY", "SHIP_MODE"]:
+        if col in df.columns:
+            df[col] = df[col].fillna(
+                {
+                    "CUSTOMER_NAME": "Unknown Customer",
+                    "CITY": "Unknown City",
+                    "SHIP_MODE": "Unknown",
+                }[col]
+            )
+
+    # Preserve missing postal codes explicitly.
+    if "POSTAL_CODE" in df.columns:
+        df["POSTAL_CODE"] = df["POSTAL_CODE"].astype("string")
+        df["POSTAL_CODE"] = df["POSTAL_CODE"].fillna("UNKNOWN")
+
+    # Convert numeric fields safely.
+    numeric_columns = [
+        "ROW_ID",
+        "SALES",
+        "QUANTITY",
+        "DISCOUNT",
+        "PROFIT",
+    ]
+
+    for col in numeric_columns:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Record missing measures instead of inventing financial values.
+    df["SALES_WAS_MISSING"] = df["SALES"].isna()
+    df["PROFIT_WAS_MISSING"] = df["PROFIT"].isna()
+
+    # Parse dates using the source's day-first date format.
+    for col in ["ORDER_DATE", "SHIP_DATE"]:
+        df[col] = pd.to_datetime(
+            df[col],
+            format="mixed",
+            dayfirst=True,
+            errors="coerce",
+        )
+
+    # Calculate shipping duration without silently dropping records.
+    df["SHIPPING_DAYS"] = (
+        df["SHIP_DATE"] - df["ORDER_DATE"]
+    ).dt.days
+
+    invalid_dates = (
+        df["ORDER_DATE"].isna() | df["SHIP_DATE"].isna()
+    )
+
+    negative_shipping_days = df["SHIPPING_DAYS"] < 0
+
+    # Invalid durations are flagged for investigation.
+    df["INVALID_SHIPPING_DAYS"] = (
+        invalid_dates | negative_shipping_days
+    )
+
+    # Calculate derived measures only where mathematically valid.
+    valid_quantity = df["QUANTITY"].notna() & df["QUANTITY"].ne(0)
+
+    df["UNIT_PRICE"] = (
+        df["SALES"] / df["QUANTITY"].where(valid_quantity)
+    )
+
+    valid_sales = df["SALES"].notna() & df["SALES"].ne(0)
+
+    df["PROFIT_MARGIN"] = (
+        df["PROFIT"] / df["SALES"].where(valid_sales)
+    )
+
+    # Replace infinite derived values with missing values.
+    derived_columns = ["UNIT_PRICE", "PROFIT_MARGIN"]
+
+    df[derived_columns] = df[derived_columns].replace(
+        [np.inf, -np.inf], np.nan
+    )
+
+    logger.info("Input rows: %s", initial_rows)
+    logger.info("Exact duplicate rows removed: %s", duplicates)
+    logger.info("Output rows: %s", len(df))
+    logger.info(
+        "Rows with missing Sales: %s",
+        int(df["SALES"].isna().sum()),
+    )
+    logger.info(
+        "Rows with missing Profit: %s",
+        int(df["PROFIT"].isna().sum()),
+    )
+    logger.info(
+        "Rows with invalid shipping dates/durations: %s",
+        int(df["INVALID_SHIPPING_DAYS"].sum()),
+    )
+
+    return df
 
 
-# =========================
-# Remove Unnecessary Columns
-# =========================
-if 'COUNTRY' in df.columns:
-    df.drop('COUNTRY', axis=1, inplace=True)
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+    )
 
+    from scripts.extract import extract_data
 
-# =========================
-# Remove Duplicate Rows
-# =========================
-df.drop_duplicates(inplace=True)
+    cleaned_df = transform_data(extract_data())
 
+    cleaned_df.to_csv(CLEANED_DATA_PATH, index=False)
 
-# =========================
-# Handle Missing Customer Name
-# =========================
-df['CUSTOMER_NAME'].fillna('Unknown Customer', inplace=True)
-
-
-# =========================
-# Fill Missing City Using Postal Code
-# =========================
-df['CITY'] = df['CITY'].fillna(
-    df.groupby('POSTAL_CODE')['CITY'].transform('first')
-)
-
-
-# =========================
-# Fill Missing Postal Code Using City
-# =========================
-df['POSTAL_CODE'] = df['POSTAL_CODE'].fillna(
-    df.groupby('CITY')['POSTAL_CODE'].transform('first')
-)
-
-
-# =========================
-# Fill Remaining Missing City and Postal Code
-# =========================
-df['CITY'].fillna('Unknown City', inplace=True)
-df['POSTAL_CODE'].fillna(-1, inplace=True)
-
-
-# =========================
-# Create Unit Price Column
-# =========================
-df['UNIT_PRICE'] = df['SALES'] / df['QUANTITY']
-
-
-# =========================
-# Fill Missing Sales Values
-# Priority:
-# 1. Product Name Average Unit Price
-# 2. Sub-Category Average Unit Price
-# =========================
-product_avg_price = df.groupby('PRODUCT_NAME')['UNIT_PRICE'].transform('mean')
-subcategory_avg_price = df.groupby('SUB_CATEGORY')['UNIT_PRICE'].transform('mean')
-
-
-df['SALES'] = df['SALES'].fillna(
-    df['QUANTITY'] * product_avg_price.fillna(subcategory_avg_price)
-)
-
-
-# Ensure Sales is always greater than Profit
-mask = (df['PROFIT'].notna()) & (df['SALES'] < df['PROFIT'])
-df.loc[mask, 'SALES'] = df.loc[mask, 'PROFIT'] + 10
-
-
-# =========================
-# Create Profit Margin Column
-# =========================
-df['PROFIT_MARGIN'] = df['PROFIT'] / df['SALES']
-
-
-# =========================
-# Fill Missing Profit Values
-# Priority:
-# 1. Product Name Average Profit Margin
-# 2. Sub-Category Average Profit Margin
-# =========================
-product_profit_margin = df.groupby('PRODUCT_NAME')['PROFIT_MARGIN'].transform('mean')
-subcategory_profit_margin = df.groupby('SUB_CATEGORY')['PROFIT_MARGIN'].transform('mean')
-
-
-df['PROFIT'] = df['PROFIT'].fillna(
-    df['SALES'] * product_profit_margin.fillna(subcategory_profit_margin)
-)
-
-
-# =========================
-# Recalculate Derived Columns After Filling Missing Values
-# =========================
-df['UNIT_PRICE'] = df['SALES'] / df['QUANTITY']
-df['PROFIT_MARGIN'] = df['PROFIT'] / df['SALES']
-
-
-# =========================
-# Handle Infinite Values
-# =========================
-df.replace([np.inf, -np.inf], np.nan, inplace=True)
-
-
-# =========================
-# Convert Date Columns to Datetime
-# =========================
-df['ORDER_DATE'] = pd.to_datetime(df['ORDER_DATE'], errors='coerce')
-df['SHIP_DATE'] = pd.to_datetime(df['SHIP_DATE'], errors='coerce')
-
-
-# =========================
-# Create Shipping Days Column
-# =========================
-df['SHIPPING_DAYS'] = (df['SHIP_DATE'] - df['ORDER_DATE']).dt.days
-
-
-# =========================
-# Remove Invalid Shipping Days
-# =========================
-df = df[df['SHIPPING_DAYS'] >= 0]
-
-
-# =========================
-# Standardize Ship Mode Values
-# =========================
-df['SHIP_MODE'] = df['SHIP_MODE'].replace('unknown', 'Unknown')
-
-
-# =========================
-# Save Final Cleaned Dataset
-# =========================
-df.to_csv("data/Superstore_Final_Cleaned.csv", index=False)
-
-
-print("Transformation completed successfully.")
-print(df.shape)
-
-
+    logger.info(
+        "Cleaned dataset saved to %s",
+        CLEANED_DATA_PATH,
+    )

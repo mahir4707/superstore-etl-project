@@ -1,301 +1,211 @@
-# Superstore ETL Pipeline Project
+# Superstore ETL Pipeline
 
-## Overview
+An end-to-end data engineering project that extracts raw retail data, cleans and transforms it using Python and Pandas, validates data quality, and loads the processed dataset into PostgreSQL.
 
-This project demonstrates an end-to-end ETL (Extract, Transform, Load) pipeline using a messy retail dataset.
+**Tech stack:** Python · Pandas · NumPy · PostgreSQL · SQLAlchemy · pytest · Git
 
-The pipeline takes raw Superstore sales data, performs data cleaning and transformation using Python, and loads the cleaned data into PostgreSQL for analysis.
+## Project Overview
 
-This project was built to practice real-world data engineering concepts such as:
+Real-world datasets often contain duplicate records, missing values, inconsistent formatting, and data-quality issues. This project implements a structured ETL pipeline to process a Superstore retail dataset and prepare it for downstream analytics.
 
-* Data extraction
-* Data cleaning
-* Handling missing values
-* Feature engineering
-* PostgreSQL integration
-* SQL analysis queries
-* Project structuring
+The pipeline is orchestrated through a single entry point, `main.py`, with separate modules for extraction, transformation, and database loading.
 
----
-
-## Project Objective
-
-The main objective of this project is to simulate a real-world data engineering workflow where raw and messy business data is cleaned, standardized, validated, and loaded into a database for reporting and analytics.
-
----
-
-## Dataset Used
-
-Dataset: Superstore Sales Dataset
-
-The dataset contains information related to:
-
-* Orders
-* Customers
-* Products
-* Cities and regions
-* Sales
-* Profit
-* Shipping details
-
-The original dataset was intentionally made messy by adding:
-
-* Missing values
-* Duplicate rows
-* Inconsistent text formatting
-* Missing city and postal code values
-* Missing sales and profit values
-* Incorrect ship modes
-
----
-
-## Project Architecture
+## Architecture
 
 ```text
-Raw CSV File
-      ↓
-Extract Phase
-      ↓
-Transform Phase
-      ↓
-Cleaned CSV File
-      ↓
-Load Phase
-      ↓
-PostgreSQL Database
-      ↓
-SQL Analysis Queries
+Raw CSV Dataset
+      |
+      v
+   Extract
+ scripts/extract.py
+      |
+      v
+  Transform
+ scripts/transform.py
+      |
+      v
+   Validate
+     main.py
+      |
+      +--------------------+
+      |                    |
+      v                    v
+ Cleaned CSV          PostgreSQL
+                       superstore_v2
 ```
 
----
+## Key Features
 
-## Folder Structure
+- **Modular ETL architecture:** Separate extraction, transformation, and loading modules.
+- **Data cleaning:** Standardizes column names and trims text values.
+- **Duplicate handling:** Removes exact duplicate rows.
+- **Missing-value handling:** Preserves missing financial values and creates flags to identify missing Sales and Profit values.
+- **Data transformation:** Derives unit price, profit margin, and shipping duration.
+- **Data validation:** Checks required columns, duplicate rows, and missing order and product identifiers.
+- **Database integration:** Loads processed data into PostgreSQL using SQLAlchemy.
+- **Logging and exception handling:** Records pipeline stages, validation results, and failures.
+- **Automated testing:** Uses pytest to test transformation behavior.
+- **Credential management:** Reads database configuration from environment variables rather than hardcoding credentials.
+
+## Project Structure
 
 ```text
 superstore-etl-project/
-│
 ├── data/
 │   ├── Superstore_Messy.csv
 │   └── Superstore_Final_Cleaned.csv
-│
 ├── scripts/
+│   ├── __init__.py
 │   ├── extract.py
 │   ├── transform.py
 │   └── load.py
-│
+├── tests/
+│   └── test_transform.py
 ├── sql/
 │   └── queries.sql
-│
-├── README.md
+├── logs/
+│   └── pipeline.log
+├── main.py
 ├── requirements.txt
-└── .gitignore
+├── .env
+├── .gitignore
+└── README.md
 ```
 
----
+The `.env` file and runtime logs are excluded from Git using `.gitignore`.
+
+## Dataset and Processing Results
+
+Results from a successful local pipeline execution:
+
+| Metric | Result |
+|---|---:|
+| Raw rows | 10,294 |
+| Exact duplicate rows removed | 273 |
+| Cleaned rows | 10,021 |
+| Raw columns | 21 |
+| Transformed columns | 27 |
+| Missing Sales values | 300 |
+| Missing Profit values | 300 |
+| Invalid shipping records flagged | 0 |
+
+Missing financial values are preserved rather than replaced with invented values. Additional flags identify missing Sales and Profit values for downstream analysis.
 
 ## Technologies Used
 
-* Python
-* Pandas
-* NumPy
-* PostgreSQL
-* SQLAlchemy
-* Psycopg2
-* SQL
-* Git
-* GitHub
+- **Python:** Pipeline orchestration and data processing
+- **Pandas:** Data extraction, cleaning, and transformation
+- **NumPy:** Handling non-finite derived numerical values
+- **PostgreSQL:** Relational storage for processed data
+- **SQLAlchemy:** Database connectivity and data loading
+- **python-dotenv:** Loading local environment configuration
+- **pytest:** Automated tests for transformation logic
 
----
+## Setup and Installation
 
-## Extract Phase
+### 1. Clone the repository
 
-In the extract phase:
-
-* Raw CSV file is read using Pandas
-* Dataset shape is checked
-* Column names are inspected
-* Missing values are identified
-* Data types are reviewed
-
----
-
-## Transform Phase
-
-The transform phase contains the main data cleaning logic.
-
-### Cleaning Steps Performed
-
-* Removed duplicate rows
-* Standardized column names
-* Removed unnecessary columns
-* Filled missing customer names
-* Filled missing city values using postal code
-* Filled missing postal codes using city
-* Replaced remaining missing city values with 'Unknown City'
-* Replaced remaining postal code values with -1
-* Calculated unit price using sales and quantity
-* Estimated missing sales using:
-
-  * Product-level average unit price
-  * Sub-category average unit price
-* Ensured sales values were not lower than profit values
-* Calculated profit margin
-* Estimated missing profit values using:
-
-  * Product-level profit margin
-  * Sub-category profit margin
-* Converted order and ship dates into datetime format
-* Calculated shipping days
-* Removed invalid shipping records
-* Standardized ship mode values
-
----
-
-## Load Phase
-
-In the load phase:
-
-* Cleaned CSV file is read
-* Connection is established with PostgreSQL
-* Cleaned data is loaded into PostgreSQL table
-* Table is created automatically using Pandas and SQLAlchemy
-
----
-
-## PostgreSQL Connection
-
-The project uses SQLAlchemy to connect Python with PostgreSQL.
-
-Example connection string:
-
-```python
-engine = create_engine(
-    "postgresql://postgres:your_password@localhost:5433/superstore_db"
-)
+```bash
+git clone https://github.com/mahir4707/superstore-etl-project.git
+cd superstore-etl-project
 ```
 
----
+### 2. Install dependencies
 
-## SQL Analysis Queries
-
-Some example SQL queries used after loading data:
-
-### Total Sales
-
-```sql
-SELECT SUM(sales)
-FROM superstore;
+```bash
+python -m pip install -r requirements.txt
 ```
 
-### Top 10 Products by Sales
+### 3. Configure environment variables
+
+Create a `.env` file in the project root:
+
+```dotenv
+DB_HOST=localhost
+DB_PORT=5433
+DB_NAME=superstore_db
+DB_USER=postgres
+DB_PASSWORD=your_local_database_password
+```
+
+Replace the example password with your local PostgreSQL password. Never commit real credentials to GitHub.
+
+Ensure PostgreSQL is running and the configured database already exists.
+
+### 4. Run the ETL pipeline
+
+```bash
+python main.py
+```
+
+The pipeline extracts the raw data, transforms and validates it, writes the cleaned CSV, and loads the data into the PostgreSQL table `public.superstore_v2`.
+
+The loader intentionally fails if the target table already exists. It does not automatically overwrite an existing table.
+
+### 5. Run automated tests
+
+```bash
+python -m pytest -v
+```
+
+The current test suite covers:
+
+- Exact duplicate removal
+- Unit price and profit margin calculations
+- Preservation and flagging of missing financial values
+- Rejection of an empty DataFrame
+
+**Current test result:** 4 passed.
+
+## Database Verification
+
+The successful PostgreSQL load was verified locally:
+
+- Table: `public.superstore_v2`
+- Rows loaded: 10,021
+- Columns: 27
+
+Example SQL queries:
 
 ```sql
-SELECT product_name, SUM(sales) AS total_sales
-FROM superstore
-GROUP BY product_name
-ORDER BY total_sales DESC
+-- Total rows loaded
+SELECT COUNT(*)
+FROM public.superstore_v2;
+
+-- Inspect the dataset
+SELECT *
+FROM public.superstore_v2
 LIMIT 10;
+
+-- Check missing financial values
+SELECT
+    COUNT(*) FILTER (WHERE sales IS NULL) AS missing_sales,
+    COUNT(*) FILTER (WHERE profit IS NULL) AS missing_profit
+FROM public.superstore_v2;
+
+-- Sales and profit by category
+SELECT
+    category,
+    SUM(sales) AS total_sales,
+    SUM(profit) AS total_profit
+FROM public.superstore_v2
+GROUP BY category
+ORDER BY total_sales DESC;
 ```
-
-### Monthly Sales Trend
-
-```sql
-SELECT 
-    DATE_TRUNC('month', order_date::date) AS month,
-    SUM(sales) AS total_sales
-FROM superstore
-GROUP BY month
-ORDER BY month;
-```
-
-### Top Cities by Profit
-
-```sql
-SELECT city, SUM(profit) AS total_profit
-FROM superstore
-GROUP BY city
-ORDER BY total_profit DESC
-LIMIT 10;
-```
-
-### Average Shipping Days by Ship Mode
-
-```sql
-SELECT ship_mode, AVG(shipping_days) AS avg_shipping_days
-FROM superstore
-GROUP BY ship_mode;
-```
-
----
-
-## Key Business Insights
-
-* Standard Class is the most commonly used shipping mode
-* Some products generate negative profit despite having high sales
-* Certain cities contribute significantly more profit than others
-* High discounts often lead to negative profit
-* Shipping times vary significantly across ship modes
-
----
-
-## How to Run the Project
-
-### Step 1
-
-Clone the repository
-
-```bash
-git clone https://github.com/yourusername/superstore-etl-project.git
-```
-
-### Step 2
-
-Install required libraries
-
-```bash
-pip install -r requirements.txt
-```
-
-### Step 3
-
-Run extract script
-
-```bash
-python scripts/extract.py
-```
-
-### Step 4
-
-Run transform script
-
-```bash
-python scripts/transform.py
-```
-
-### Step 5
-
-Run load script
-
-```bash
-python scripts/load.py
-```
-
----
 
 ## Future Improvements
 
-* Add Apache Airflow for orchestration
-* Add logging and error handling
-* Add Docker support
-* Add cloud storage integration
-* Add automated testing
-* Add dashboard using Power BI or Tableau
-* Add Spark for large-scale processing
-
----
+- Add automated tests for the complete pipeline and database loading.
+- Introduce structured data-quality reports and configurable validation rules.
+- Add database migrations and a controlled strategy for repeatable loads.
+- Add CI automation with GitHub Actions.
+- Containerize the application with Docker.
+- Extend the pipeline with incremental loading and scheduling.
 
 ## Author
 
-Mahir Sama
+**Mahir Sama**
 
-Aspiring Data Engineer
+Computer Engineering student interested in Data Engineering, Data Analytics, databases, and building reliable data pipelines.
+
+GitHub: https://github.com/mahir4707
